@@ -9,6 +9,11 @@ import html.parser
 import string
 from typing import List
 from typing import Dict
+import nltk
+#nltk.download('punkt')
+#nltk.download('averaged_perceptron_tagger')
+
+
 import context
 import context.broad_context
 
@@ -41,6 +46,73 @@ mainQuery = "/html/body//descendant::*[normalize-space(.) = {}]".format(Selenium
 
 # The sub queries that may help get elements that otherwise are not captured by the general main query
 seleniumQueries = ["/html/body//p"]
+# ======================================================================================================================
+# Field Definition, specifically a textual html field assumption
+# ======================================================================================================================
+
+# Field behaviors
+
+
+class FieldBehavior(object):
+
+    def Evaluate(self, data:str) -> float:
+        """Evaluate how well this data matches the behavior expectations"""
+        return NotImplementedError
+
+
+class NameBehaviors(FieldBehavior):
+
+    def Evaluate(self, data:str) -> float:
+        """Check if data is/has a pronoun"""
+
+        is_noun = lambda pos: pos[:2] == 'NN'
+
+        tokenized = nltk.word_tokenize(data)
+
+        nouns = [word for (word, pos) in nltk.pos_tag(tokenized) if is_noun(pos)]
+
+        eval = 0
+
+        if len(nouns) > 0:
+            eval = 1
+
+        return eval
+
+
+# === === === === === === === === === === === === === === === === === === === === === === === === === === === === ===
+
+class Field(object):
+
+    def __init__(self, fieldName:str, labelFormats:List[re.Pattern]=[], dataFormats:List[re.Pattern]=[], dataTypeIndex:int=0, behaviorClasses:List[FieldBehavior]=[], occurences:int=1):
+        """A field is a collection of definitions for an item of information: example: Name has many formats of label,
+        expressions of format, number of occurences and certain behaviors."""
+
+        self.FieldName:str = fieldName
+        self.LabelFormats:List[re.Pattern] = labelFormats
+        self.DataFormats:List[re.Pattern] = dataFormats
+        self.Behaviors:List[FieldBehavior] = behaviorClasses
+        self.Ocurrences:int = occurences
+        self.DataTypeIndex:int = dataTypeIndex
+
+
+# Some field helper methods
+def GetAllFormats(fields:List[Field], labelFormats:bool=False) -> List[re.Pattern]:
+    """Given a list of fields, return all the regexes defined for them. If labelFormats true will return the label
+    formats else the data formats"""
+
+    returnData = []
+
+    for field in fields:
+        if labelFormats:
+            returnData.extend(field.LabelFormats)
+        else:
+            returnData.extend(field.DataFormats)
+
+    return returnData
+
+
+# ======================================================================================================================
+# Element definition, a component of the DOM
 # ======================================================================================================================
 
 
@@ -245,6 +317,7 @@ class HTMLStrip(html.parser.HTMLParser):
 # Process for taking HTML elements extracted from web pages and turning them into labeled, process-capable data
 # ======================================================================================================================
 
+
 def CleanupTagDumping(elements:List[Element], removeTags:List[str] = ['strike', 's']) -> List[Element]:
     """Simply go through all elements and remove the elements if the html tag is indicated in the parent tags"""
 
@@ -276,8 +349,10 @@ def CleanupTrimming(elements:List[Element], removes:List[str]=['The ', ' the ', 
             element.InnerHTML = element.InnerHTML.rstrip()
 
 
-def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters=['\n', '<br>']) -> List[Element]:
+def CleanupElementSubsplittingSpecific(elements:List[Element], specialSplitter='\n') -> List[Element]:
     newElementsList: List[Element] = []
+
+    # NOTED BUG: Only splits on first character in specials list, easy fix, but focusing elsewhere
 
     # split on special splitters
     for idx, element in enumerate(elements):
@@ -285,35 +360,31 @@ def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters
         ongoingTagIndex = 0
         ongoingRenderedY = 32
 
-        for splitChar in specialSplitters:
+        if specialSplitter in element.InnerHTML:
 
-            if splitChar in element.InnerHTML:
+            elementSubPieces = element.InnerHTML.split(specialSplitter)
 
-                elementSubPieces = element.InnerHTML.split(splitChar)
+            for subPiece in elementSubPieces:
 
-                for subPiece in elementSubPieces:
+                newElement = copy.copy(element)
 
-                    newElement = copy.copy(element)
+                ongoingTagIndex += 1
+                ongoingRenderedY += 32
 
-                    ongoingTagIndex += 1
-                    ongoingRenderedY += 32
+                newElement.InnerHTML = subPiece
+                newElement.TagIndex = newElement.TagIndex + ongoingTagIndex
+                newElement.TagDepth += 1
+                # Magic number for "breaking"
+                newElement.RenderedY += ongoingRenderedY
+                newElement.Len = len(subPiece)
 
-                    newElement.InnerHTML = subPiece
-                    newElement.TagIndex = newElement.TagIndex + ongoingTagIndex
-                    newElement.TagDepth += 1
-                    # Magic number for "breaking"
-                    newElement.RenderedY += ongoingRenderedY
-                    newElement.Len = len(subPiece)
+                newElementsList.append(newElement)
 
-                    newElementsList.append(newElement)
+                element.InnerHTML = element.InnerHTML.replace(subPiece, '')
 
-                    element.InnerHTML = element.InnerHTML.replace(subPiece, '')
+        else:
+            newElementsList.append(element)
 
-                break
-
-            else:
-                newElementsList.append(element)
-                break
         if ongoingTagIndex > 0:
             # update the subsequent elements tagIndexes
             for element in elements[idx:]:
@@ -322,13 +393,26 @@ def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters
     return newElementsList
 
 
+def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters=['\n', '<br>','//', '—']) -> List[Element]:
+
+    finalElements = elements
+
+    for specialSplitter in specialSplitters:
+
+        finalElements = CleanupElementSubsplittingSpecific(finalElements, specialSplitter)
+
+    return finalElements
+
+
 def Cleanup_GeneralMatchSplitting(elements:List[Element], dataFormats:List[re.Pattern]) -> List[Element]:
     """Simply take formats and if matched extract them from the element and create a new element with it"""
 
     # these will be where the new elements are placed, this list will be returned and "appended" to the old list
     newElementsList:List[Element] = []
 
-    for idx, element in enumerate(elements):
+    moddedElements = copy.deepcopy(elements)
+
+    for idx, element in enumerate(moddedElements):
 
         ongoingTagIndex = 0
 
@@ -369,10 +453,10 @@ def Cleanup_GeneralMatchSplitting(elements:List[Element], dataFormats:List[re.Pa
 
         if ongoingTagIndex > 0:
             # update the subsequent elements tagIndexes
-            for element in elements[idx:]:
+            for element in moddedElements[idx:]:
                 element.TagIndex = element.TagIndex + ongoingTagIndex
 
-    newElementsList.extend(elements)
+    newElementsList.extend(moddedElements)
 
     return newElementsList
 
@@ -445,6 +529,22 @@ def Cleanup_RecursiveInnerHTMLRemover(elements:List[Element]) -> List[Element]:
     return elements
 
 
+def Cleanup_DuplicateRemoval(elements:List[Element]) -> List[Element]:
+
+    newElements = elements.copy()
+
+    for idx, element in enumerate(elements):
+        for trgIdx, trgElement in enumerate(elements):
+            if idx != trgIdx:
+                if element.InnerHTML == trgElement.InnerHTML:
+                    if element not in newElements:
+                        pass
+                    else:
+                        newElements.remove(trgElement)
+
+    return newElements
+
+
 def Clean_DuplicateMarking(elements:List[Element]) -> List[Element]:
     """When duplicate labels are found, will add some kind of textual differentiator, like the tag index"""
 
@@ -458,8 +558,78 @@ def Clean_DuplicateMarking(elements:List[Element]) -> List[Element]:
 
 
 # ======================================================================================================================
+# Evaluation Approaches
+# ======================================================================================================================
+
+class EvaluationApproaches():
+
+    def Evaluate(self, element1:Element, element2:Element) -> float:
+        return NotImplementedError
+
+
+class DataToLabelEvaluationHeuristic(EvaluationApproaches):
+
+    def Evaluate(self, element1:Element, element2:Element) -> float:
+        """Evaluate """
+
+        # Regular distance
+        fullDist = Distance(element1, element2)
+
+        # do horizontal biases for label association
+        dataVector = element1.GetVector()
+
+        dataSpatialVector = dataVector[0:2]
+
+        labelVector = element2.GetVector()
+
+        labelSpatialVector = labelVector[0:2]
+
+        # Horizontal Bias, if label is to the left of the data, increase its chances, if right, decrease
+        if dataSpatialVector[0] > labelSpatialVector[0]:
+            horizontalDist = 0
+        else:
+            horizontalDist = fullDist * 2
+
+        if dataSpatialVector[1] >= labelSpatialVector[1]:
+            # do vertical biases for label association
+            dataSpatialVerticalVector = dataSpatialVector[0:2]
+            dataSpatialVerticalVector[0] = 0
+
+            # Label is "above" the data and want to evaluate its impact
+            labelSpatialVertVector = labelSpatialVector[0:2]
+            labelSpatialVertVector[0] = 0
+
+            verticalDistance = scipy.spatial.distance.euclidean(dataSpatialVerticalVector, labelSpatialVertVector)
+        else:
+            # Label is "below the data" minimize its impact
+            verticalDistance = fullDist * 2
+
+        # bonus calculations
+        # if the data is "contained within the render width and height of a label boost it"
+        bonus = 0
+
+        if Contained(element1, element2):
+            bonus = fullDist * 0.25
+
+        evalNum = verticalDistance + horizontalDist + fullDist - bonus
+
+        return evalNum
+
+
+class LabelToDataEvaluationHeuristic(EvaluationApproaches):
+
+    def Evaluate(self, element1:Element, element2:Element) -> float:
+        """Evaluate label distance to data reward closeness to the label"""
+        # Regular distance
+        fullDist = (Distance(element1, element2) + 1)
+
+        return 1000/fullDist
+
+
+# ======================================================================================================================
 # Helper Methods
 # ======================================================================================================================
+
 
 def _compileDictionaryValuesIntoBigList(srcDict:dict) -> List[re.Pattern]:
     """Simply take all the values of a dict of lists and compile all values into a list"""
@@ -472,250 +642,54 @@ def _compileDictionaryValuesIntoBigList(srcDict:dict) -> List[re.Pattern]:
     return bigList
 
 
-# ======================================================================================================================
-# Grab Approaches
-# ======================================================================================================================
+def EvaluateDataAgainstFormats(data:List[Element], formats:List[re.Pattern], simpleMatch:bool=False) -> pd.DataFrame:
+    """Given a set of data, evaluate how many matches it has against a list of formats"""
 
-def Evaluate_By_Formats(data:List[Element], formats:List[re.Pattern]) -> pd.DataFrame:
-    """Given a list of data elements and a set of formats return the ones that match"""
+    evaluations = []
+
+    for element in data:
+
+        elementMatches = 0
+
+        for dataFormat in formats:
+            match = dataFormat.match(element.InnerHTML)
+            if match != None:
+                elementMatches += 1
+                if simpleMatch:
+                    break
+
+        evaluations.append(elementMatches)
 
     dataEvaluations = pd.DataFrame()
 
-    for dataElement in data:
-
-        candidateEvaluation = pd.DataFrame()
-
-        candidateEvaluation['Element'] = [dataElement]
-
-        found = False
-
-        for dataFormat in formats:
-            match = dataFormat.match(dataElement.InnerHTML)
-
-            if match != None:
-                # found one
-                found = True
-                break
-
-        if found is True:
-            candidateEvaluation[dataElement.InnerHTML] = 1.00
-            candidateEvaluation['Top Score'] = 1.00
-        else:
-            candidateEvaluation[dataElement.InnerHTML] = 0
-            candidateEvaluation['Top Score'] = 0.00
-
-        dataEvaluations = pd.concat((dataEvaluations, candidateEvaluation), axis=0, ignore_index=True)
+    dataEvaluations['Element-Object'] = data
+    dataEvaluations['Element-Match'] = evaluations
 
     return dataEvaluations
 
 
-def Evaluate_Labels(labelCandidates:List[Element], data:List[Element]) -> pd.DataFrame:
-    """From a data-unit perspective, we must try each of the label candidates and using distance checks 'guess' which ones are right"""
+def EvaluateDataRelationships(data:List[Element], targetData:List[Element], evaluationApproach:EvaluationApproaches) -> Dict[Element, list]:
+    """Generate a matrix of values for each data element and how it relates to another. Note each matrix entry has the evaluation and the element it compared to"""
 
-    # for each data item, we want to find the possible labels (here defined as the "closest" undefined text)
-    labelEvaluations = pd.DataFrame()
+    rows = dict()
 
-    for dataElement in data:
+    for element1 in data:
 
-        candidateEvaluation = pd.DataFrame()
+        columns = []
 
-        candidateEvaluation['Element'] = [dataElement.InnerHTML]
+        for y, element2 in enumerate(targetData):
 
-        for labelCandidateRow in labelCandidates:
-
-            # Regular distance
-            fullDist = Distance(dataElement, labelCandidateRow)
-
-            # do horizontal biases for label association
-            dataVector = dataElement.GetVector()
-
-            dataSpatialVector = dataVector[0:2]
-
-            labelVector = labelCandidateRow.GetVector()
-
-            labelSpatialVector = labelVector[0:2]
-
-            # Horizontal Bias, if label is to the left of the data, increase its chances, if right, decrease
-            if dataSpatialVector[0] > labelSpatialVector[0]:
-                horizontalDist = 0
+            if element1 != element2:
+                columns.append((evaluationApproach.Evaluate(element1, element2), element2))
             else:
-                horizontalDist = fullDist * 2
+                columns.append((0,None))
 
-            if dataSpatialVector[1] >= labelSpatialVector[1]:
-                # do vertical biases for label association
-                dataSpatialVerticalVector = dataSpatialVector[0:2]
-                dataSpatialVerticalVector[0] = 0
+        columns.sort(key=lambda x: x[0])
 
-                # Label is "above" the data and want to evaluate its impact
-                labelSpatialVertVector = labelSpatialVector[0:2]
-                labelSpatialVertVector[0] = 0
+        rows[element1] = (columns)
 
-                verticalDistance = scipy.spatial.distance.euclidean(dataSpatialVerticalVector, labelSpatialVertVector)
-            else:
-                # Label is "below the data" minimize its impact
-                verticalDistance = fullDist * 2
+    return rows
 
-            # bonus calculations
-            # if the data is "contained within the render width and height of a label boost it"
-            bonus = 0
-
-            if Contained(dataElement, labelCandidateRow):
-                bonus = fullDist * 0.25
-
-            evalNum = verticalDistance + horizontalDist + fullDist - bonus
-
-            candidateEvaluation[labelCandidateRow.InnerHTML] = evalNum
-
-        labelEvaluations = labelEvaluations.append(candidateEvaluation)
-
-    return labelEvaluations
-
-
-def Grab_LabelLessData(data:List[Element], labelName:str, labelFormats:List[re.Pattern], dataFormats:List[re.Pattern]) -> (Dict[str, object], List[Element]):
-    """For data that is also its label (or standalone), the assumption is the formats here are so specific that they will standout. Will return the found fields, and the trimmed list of elements."""
-
-    trimmedList = data.copy()
-
-    # If any of the possible labels for this format are present, then SKIP this (eg: return empty dict)
-    labelCandidates = Evaluate_By_Formats(data, labelFormats)
-
-    labelCandidates = labelCandidates[labelCandidates['Top Score'] <= 0]
-
-    # already have a label? End early, this is not a safe labelless grab (eg: might grab labeled data)
-    if len(labelCandidates) > 0:
-        return dict()
-
-    fields = dict()
-
-    fields[labelName] = []
-
-    for dataElement in data:
-
-        for dataFormat in dataFormats:
-            match = dataFormat.match(dataElement.InnerHTML)
-
-            if match != None:
-                fields[labelName].append(dataElement.InnerHTML)
-
-                # remove from the trimmed list
-                trimmedList.remove(dataElement)
-                break
-
-    return fields, trimmedList
-
-
-def Grab_All(data:List[Element], dataFormats) -> Dict[str, object]:
-    """Find data, then reverse engineer labels from remaining text"""
-
-    # Take the elements and refine them
-    tempList = CleanupElementSubsplittingSpecifics(data)
-
-    tempList = Cleanup_RecursiveInnerHTMLRemover(tempList)
-
-    tempList = CleanupTagDumping(tempList)
-
-    # for multiple formats, just iterate through all the broad context regexeses
-    tempList = Cleanup_GeneralMatchSplitting(tempList, dataFormats)
-
-    tempList = Clean_DuplicateMarking(tempList)
-
-    # Boost some values, make them as or more important than the spatial values
-    for element in tempList:
-        element.TagDepth = element.TagDepth * 10000
-        element.TagIndex = element.TagIndex * 1000
-
-    # Now begin evaluations to determine if data or labels, or others
-
-    # Eval using only the date regexes
-    evals = Evaluate_By_Formats(tempList, context.broad_context.DateRegexses)
-
-    dataEvals = evals[evals['Top Score'] > 0]
-
-    labelCandidates = evals[evals['Top Score'] <= 0]
-
-    # Go through each data item and find the closest (with bias) text, this will be its likely label
-    labelCandidates = Evaluate_Labels(list(labelCandidates['Element'].values),
-                                                   list(dataEvals['Element'].values))
-
-    # select the closest label candidate
-    fields = dict()
-
-    for rowNum, row in labelCandidates.iterrows():
-        labelToDataEvaluations = row[1:]
-
-        labelToDataEvaluations = labelToDataEvaluations.sort_values()
-
-        labelName = labelToDataEvaluations.keys()[0]
-
-        if labelName in fields.keys():
-            # found a duplicate, make it a list
-            fields[labelName].append(row[0])
-
-        else:
-            fields[labelName] = [row[0]]
-
-    return fields
-
-
-def Grab_Some(data:List[Element], dataFormats:List[re.Pattern], labelFormats:List[re.Pattern], labelName:str=None) -> Dict[str, object]:
-    """Find data, find labels, then associate"""
-
-    # Take the elements and refine them
-    tempList = CleanupElementSubsplittingSpecifics(data)
-
-    tempList = Cleanup_RecursiveInnerHTMLRemover(tempList)
-
-    tempList = CleanupTagDumping(tempList)
-
-    tempList = Cleanup_GeneralMatchSplitting(tempList, dataFormats)
-
-    tempList = Clean_DuplicateMarking(tempList)
-
-    # Boost some values, make them as or more important than the spatial values
-    for element in tempList:
-        element.TagDepth = element.TagDepth * 10000
-        element.TagIndex = element.TagIndex * 1000
-
-    earlyFields = dict()
-
-    if labelName is not None:
-        # Do a labelless check first
-        earlyFields, tempList = Grab_LabelLessData(data, labelName=labelName, labelFormats=labelFormats, dataFormats=dataFormats)
-
-
-    # Eval using only the date regexes
-    evals = Evaluate_By_Formats(tempList, dataFormats)
-
-    dataEvals = evals[evals['Top Score'] > 0]
-
-    labelCandidates = evals[evals['Top Score'] <= 0]
-
-    labelCandidates = Evaluate_By_Formats(list(labelCandidates['Element'].values), labelFormats)
-
-    # Go through each data item and find the closest (with bias) text, this will be its likely label
-    labelCandidates = Evaluate_Labels(list(labelCandidates['Element'].values),
-                                                   list(dataEvals['Element'].values))
-
-    # select the best label candidate
-    fields = dict()
-
-    for rowNum, row in labelCandidates.iterrows():
-        labelToDataEvaluations = row[1:]
-
-        labelToDataEvaluations = labelToDataEvaluations.sort_values()
-
-        labelName = labelToDataEvaluations.keys()[0]
-
-        if labelName in fields.keys():
-            # found a duplicate, make it a list
-            fields[labelName].append(row[0])
-
-        else:
-            fields[labelName] = [row[0]]
-
-    fields.update(earlyFields)
-
-    return fields
 
 # ======================================================================================================================
 # Parsing Methods
