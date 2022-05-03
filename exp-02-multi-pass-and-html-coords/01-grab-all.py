@@ -9,7 +9,7 @@ import context.broad_context
 
 siteDataPaths = glob.glob('../exp-00-exploratory/output-conference-data/*.csv')
 
-evaluationApproach = context.formats.html.BasicEvaluation()
+evaluationApproach = context.formats.html.DataToLabelEvaluationHeuristic()
 
 times = []
 dataAccuracies = []
@@ -34,8 +34,8 @@ for siteDataPath in siteDataPaths:
 
     # Boost some values, make them as or more important than the spatial values
     for element in tempList:
-        element.TagDepth = element.TagDepth * 0
-        element.TagIndex = element.TagIndex * 0
+        element.TagDepth = element.TagDepth * 10000
+        element.TagIndex = element.TagIndex * 1000
 
     # Per-Format
     fields = dict()
