@@ -29,6 +29,7 @@ conferenceFields.append(context.formats.html.Field('Initial-Submission-Deadline'
                                                                 re.compile("[Rr]efereed [Pp]apers?"),
                                                                 re.compile("[Aa]bstracts? [Dd]ue")],
                                                   dataFormats=context.broad_context.DateRegexses,
+                                                   occurences=1,
                                                      dataTypeIndex=3))
 
 conferenceFields.append(context.formats.html.Field('Notification',
@@ -37,8 +38,12 @@ conferenceFields.append(context.formats.html.Field('Notification',
                                                                     re.compile("[Aa]uthor response period"),
                                                                     re.compile("[Pp]aper acceptance notification"),
                                                                     re.compile("[Aa]uthor notification"),
-                                                                    re.compile("[Aa]cceptance notification")],
+                                                                    re.compile("[Aa]cceptance notification"),
+                                                                    re.compile("[Ee]arly reject notification"),
+                                                                    re.compile("[Aa]uthor notification")
+                                                                    ],
                                                       dataFormats=context.broad_context.DateRegexses,
+                                                        occurences=1,
                                                         dataTypeIndex=3))
 
 
@@ -48,6 +53,7 @@ conferenceFields.append(context.formats.html.Field('Final-Submission-Deadline',
                                                                   re.compile("Final [Pp]aper [Ss]ubmissions?"),
                                                                   re.compile("[Pp]aper [Ss]ubmissions?")],
                                                       dataFormats=context.broad_context.DateRegexses,
+                                                        occurences=1,
                                                        dataTypeIndex=3))
 
 conferenceFields.append(context.formats.html.Field('Conference-Organizers',

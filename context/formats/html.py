@@ -567,6 +567,24 @@ class EvaluationApproaches():
         return NotImplementedError
 
 
+class BasicEvaluation(EvaluationApproaches):
+
+    def Evaluate(self, element1:Element, element2:Element) -> float:
+
+        # do horizontal biases for label association
+        dataVector = element1.GetVector()
+
+        dataSpatialVector = dataVector[0:2]
+
+        labelVector = element2.GetVector()
+
+        labelSpatialVector = labelVector[0:2]
+
+        eval = scipy.spatial.distance.euclidean(dataSpatialVector, labelSpatialVector)
+
+        return eval
+
+
 class DataToLabelEvaluationHeuristic(EvaluationApproaches):
 
     def Evaluate(self, element1:Element, element2:Element) -> float:
@@ -623,7 +641,46 @@ class LabelToDataEvaluationHeuristic(EvaluationApproaches):
         # Regular distance
         fullDist = (Distance(element1, element2) + 1)
 
-        return 1000/fullDist
+        # Do some reversed bias stuff, element 1 is label, element 2 is data
+        # do horizontal biases for label association
+        dataVector = element2.GetVector()
+
+        dataSpatialVector = dataVector[0:2]
+
+        labelVector = element1.GetVector()
+
+        labelSpatialVector = labelVector[0:2]
+
+        # Horizontal Bias, if label is to the left of the data, increase its chances, if right, decrease
+        if dataSpatialVector[0] > labelSpatialVector[0]:
+            horizontalDist = 0
+        else:
+            horizontalDist = fullDist * 2
+
+        if dataSpatialVector[1] >= labelSpatialVector[1]:
+            # do vertical biases for label association
+            dataSpatialVerticalVector = dataSpatialVector[0:2]
+            dataSpatialVerticalVector[0] = 0
+
+            # Label is "above" the data and want to evaluate its impact
+            labelSpatialVertVector = labelSpatialVector[0:2]
+            labelSpatialVertVector[0] = 0
+
+            verticalDistance = scipy.spatial.distance.euclidean(dataSpatialVerticalVector, labelSpatialVertVector)
+        else:
+            # Label is "below the data" minimize its impact
+            verticalDistance = fullDist * 2
+
+        # bonus calculations
+        # if the data is "contained within the render width and height of a label boost it"
+        bonus = 0
+
+        if Contained(element1, element2):
+            bonus = fullDist * 0.25
+
+        evalNum = verticalDistance + horizontalDist + fullDist - bonus
+
+        return evalNum
 
 
 # ======================================================================================================================

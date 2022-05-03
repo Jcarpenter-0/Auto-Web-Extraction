@@ -7,7 +7,8 @@ import re
 Currency = [re.compile("\$[0-9]+\.[0-9][0-9]")]
 
 Address = [re.compile("[0-9]+ [A-Za-z]+ (Ave)?(St)? [A-Z][A-Z],? [A-Z][a-z]+,? [A-Z][A-Z] [0-9]+"),
-           re.compile("[A-Z]{1,10}[a-z]{1,10}, [A-Z]{1,3}[a-z]{0,3}, [A-Z]{1,3}")]
+           re.compile("[A-Z]{1,10}[a-z]{1,10}, [A-Z]{1,3}[a-z]{0,3}, [A-Z]{1,3}"),
+           re.compile("[A-Z]{1,10}[a-z]{1,10}, [A-Z][a-z]{3,10} [A-Z][a-z]{3,10}")]
 
 Names = [re.compile("[A-Z][a-z]{1,14}\s[A-Z][a-z]{1,14}")]
 
@@ -54,4 +55,4 @@ AllPrimitives.append(Currency)
 AllPrimitives.append(DateRanges)
 AllPrimitives.append(DateRegexses)
 AllPrimitives.append(Address)
-AllPrimitives.append(Names)
+#AllPrimitives.append(Names)
