@@ -284,12 +284,12 @@ def IsPlural(sentence:str) -> bool:
 
 class CustomEvaluation(EvaluationModule):
 
-    def __init__(self, totalChecks:set={}, totalDiscs:set={}, totalIgnores:set={},
-                 domainChecks:set={}, domainDiscs:set={}, domainIgnores:set={},
-                 dirChecks:set={}, dirDiscs:set={}, dirIgnores:set={},
-                pathChecks:set={}, pathDiscs:set={}, pathIgnores:set={},
-                mimeChecks:set={}, mimeDiscs:set={}, mimeIgnores:set={},
-                pageChecks:set={},
+    def __init__(self, totalChecks:set=set(), totalDiscs:set=set(), totalIgnores:set=set(),
+                 domainChecks:set=set(), domainDiscs:set={}, domainIgnores:set=set(),
+                 dirChecks:set=set(), dirDiscs:set=set(), dirIgnores:set=set(),
+                pathChecks:set=set(), pathDiscs:set=set(), pathIgnores:set=set(),
+                mimeChecks:set=set(), mimeDiscs:set=set(), mimeIgnores:set=set(),
+                pageChecks:set=set(),
                 ):
         """Using simple boolean checks"""
         self.DomainChecks = domainChecks

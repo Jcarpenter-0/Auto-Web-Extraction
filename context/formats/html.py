@@ -1,6 +1,7 @@
 import copy
 import re
 import time
+import numpy as np
 from selenium.webdriver.remote.webdriver import WebDriver
 import scipy.spatial.distance
 import pandas as pd
@@ -140,6 +141,11 @@ class Element(object):
         self.InnerHTML:str = innerHTML
         #self.RawInnerHTML:str = rawInnerHTML
 
+        # Demographics if this is a string (noun, proper noun, verb, etc)
+        self.TextDemographics:list = []
+        # Overall type, string, currency,
+        self.Type:str = []
+
         self.Len: int = -1
 
         if self.InnerHTML is not None:
@@ -181,7 +187,7 @@ def Distance(elem1:Element, elem2:Element) -> float:
     return scipy.spatial.distance.euclidean(elem1.GetVector(), elem2.GetVector())
 
 
-def ParseWebPage(siteURL:str, seleniumWebBrowser:WebDriver, tagIgnores=['<script>', '</script>'], pageWait:float=1.5, verbose=False) -> (pd.DataFrame, pd.DataFrame, List[Element]):
+def ParseWebPage(siteURL:str, seleniumWebBrowser:WebDriver, tagIgnores=['<script>', '</script>'], pageWait:float=5, verbose=False) -> (pd.DataFrame, pd.DataFrame, List[Element]):
     """Start with Selenium first, get all the rendered elements, then resolve the html locations"""
 
     data = pd.DataFrame()
@@ -317,7 +323,6 @@ class HTMLStrip(html.parser.HTMLParser):
 # Process for taking HTML elements extracted from web pages and turning them into labeled, process-capable data
 # ======================================================================================================================
 
-
 def CleanupTagDumping(elements:List[Element], removeTags:List[str] = ['strike', 's']) -> List[Element]:
     """Simply go through all elements and remove the elements if the html tag is indicated in the parent tags"""
 
@@ -402,6 +407,58 @@ def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters
         finalElements = CleanupElementSubsplittingSpecific(finalElements, specialSplitter)
 
     return finalElements
+
+
+def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[List[re.Pattern]]) -> List[Element]:
+    """Given a single element, parse it out, across all formats"""
+
+    # In order of most complex to least complex, take pieces out of the element's string
+    currentText = element.InnerHTML
+
+    tempTexts = []
+
+    for formatType in listOfDataFormats:
+        for formatSpecific in formatType:
+            foundEntries = formatSpecific.findall(currentText)
+
+            for found in foundEntries:
+                # Don't add a new element if the whole element matches
+                if len(found) != len(currentText):
+
+                    foundIndex = element.InnerHTML.index(found)
+
+                    # Where was this format found in the overall original string? this will determine "order" before return
+                    tempTexts.append((found,foundIndex))
+
+                    # Remove from original string
+                    currentText = currentText.replace(found,'')
+
+    # If there is remaining text at the end, that didn't match any formats, clean it up
+    remainingTextFoundIndex = element.InnerHTML.index(currentText)
+    tempTexts.append((currentText,remainingTextFoundIndex))
+
+    # Sort by the index order
+    tempTexts.sort(key=lambda x:x[1], reverse=False)
+
+    # For each split text, make a corresponding element
+    newElements = []
+
+    for idx, textObj in enumerate(tempTexts):
+        text = textObj[0]
+        occurrenceIndex = textObj[1]
+
+        newElement = copy.copy(element)
+
+        newElement.InnerHTML = text
+        # Change the Ti based on occurrence in original string
+        newElement.TagIndex += idx
+
+        # Change Render X based on the "distance in the text"
+        newElement.RenderedX += (4*occurrenceIndex)
+
+        newElements.append(newElement)
+
+    return newElements
 
 
 def Cleanup_GeneralMatchSplitting(elements:List[Element], dataFormats:List[re.Pattern]) -> List[Element]:
