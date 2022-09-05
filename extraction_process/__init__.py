@@ -3,17 +3,23 @@ import datetime
 from urllib.parse import urlparse
 from typing import List
 from typing import Dict
+from scipy.spatial.distance import pdist
 
 import nltk
+import nltk.tokenize
 #nltk.download('punkt')
 #nltk.download('averaged_perceptron_tagger')
 
 from selenium.webdriver.remote.webdriver import WebDriver
+from sklearn.cluster import DBSCAN
+import numpy as np
 
 import context.broad_context
 import context
 import context.sources.filtrations
 import context.formats.html
+import context.mappings
+import context.formats
 
 # ======================================================================================================================
 #
@@ -619,8 +625,8 @@ def GrabSome(webData:List[context.formats.html.Element], contextFields:list) -> 
     return finalReport, timeDelta.seconds
 
 
-def GrabBest(webData:List[context.formats.html.Element]) -> (pd.DataFrame, float):
-    """Enrich coordinates, do primitive subsplitting"""
+def GrabBest(webData:List[context.formats.html.Element], mappings:List[tuple]) -> (pd.DataFrame, float):
+    """Enrich coordinates, do primitive subsplitting, then result in clusters of associated data"""
 
     timeStart = datetime.datetime.now()
 
@@ -631,8 +637,8 @@ def GrabBest(webData:List[context.formats.html.Element]) -> (pd.DataFrame, float
 
     # Boost some values, make them as or more important than the spatial values
     for element in tempList:
-        element.TagDepth = element.TagDepth * 10000
-        element.TagIndex = element.TagIndex * 1000
+        element.TagDepth = element.TagDepth * 100
+        element.TagIndex = element.TagIndex * 1
 
     # Do the primitive splitting
     tempList2 = tempList.copy()
@@ -640,28 +646,101 @@ def GrabBest(webData:List[context.formats.html.Element]) -> (pd.DataFrame, float
         # pop out old entry, replace with extension of the new list
         oldIndex = tempList.index(element)
 
-        tempList.extend(context.formats.html.Cleanup_GeneralMatchSplittingSingle(element,context.broad_context.AllPrimitives))
+        tempList.extend(context.formats.html.Cleanup_GeneralMatchSplittingSingle(element,context.formats.AllPrimitives))
 
         del tempList[oldIndex]
 
     # Do String assignment (parts of speech)
     for element in tempList:
 
-        element.InnerHTML
+        text = nltk.word_tokenize(element.InnerHTML)
+        textPos = nltk.pos_tag(text)
 
-        element.TextDemographics = []
+        newTextPos = []
 
+        posCounts = dict()
+
+        overallTokenCount = len(textPos)
+
+        for textPosElement, Pos in textPos:
+
+            if Pos != textPosElement:
+                newTextPos.append((textPosElement,Pos))
+
+                if Pos in posCounts.keys():
+                    posCounts[Pos] += 1
+                else:
+                    posCounts[Pos] = 1
+
+        element.TextDemographics = newTextPos
+
+        for posKey in posCounts.keys():
+            posCounts[posKey] = posCounts[posKey]/overallTokenCount
+
+        element.TextType = posCounts
 
     # Do the clustering
-    clusterLabels = []
+    vectors = []
+
+    for element in tempList:
+        vectors.append(element.GetVector())
+
+    distances = pdist(vectors)
+    avgDistance = np.mean(distances)
+    stdDistance = np.std(distances)
+
+    clusterDistance = (avgDistance - (stdDistance)) * 0.35
+
+    # Approaches for clustering: https://scikit-learn.org/stable/modules/clustering.html
+    clustering = DBSCAN(eps=clusterDistance, min_samples=2).fit(vectors)
+
+    clusterLabels = clustering.labels_
+
+    labelUniques = np.unique(clusterLabels)
+
+    clustercount = len(labelUniques)
 
     # For each cluster approach, try to resolve the relationships or the labels for label-less data
-    for clusterLabel in clusterLabels:
-        pass
+    clusters = []
+
+    for clusterLabel in range(0,clustercount):
+        specificCluster = []
+
+        for itemIDX, item in enumerate(clusterLabels):
+            if clusterLabel == item:
+                specificCluster.append(tempList[itemIDX])
+
+        clusters.append(specificCluster)
+
+    tempList3 = []
+
+    for cluster in clusters:
+        # removes duplicates
+        cleanedCluster = context.formats.html.Cleanup_DuplicateRemoval(cluster)
+        tempList3.append(cleanedCluster)
+
+        # Final step is actually resolving labels (if any) or label-rules (if any)
+        mappingResults = context.mappings.MatchMappings(cleanedCluster, mappings)
+
+        # Higher primitives and propernouns
+        dataList = []
+
+        # everything else ~ label candidates
+        miscList = []
+
+        # go through each data item, first, operate from assumption that highest mapping is correct, then look for label, if none found, find nearest noun text within reason, if none, label-less take label from mapping field highest match
+
+
+        print()
+
+
+    finalDF = context.formats.html.ConvertListOfElementsToDF(tempList)
+
+    #finalDF.to_csv('./temp-webpage-cluster-work.csv', index=False)
 
     # =======================
 
     timeEnd = datetime.datetime.now()
     timeDelta = timeEnd - timeStart
 
-    return (None, timeDelta)
+    return (finalDF, timeDelta)

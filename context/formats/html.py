@@ -10,6 +10,7 @@ import html.parser
 import string
 from typing import List
 from typing import Dict
+from typing import Tuple
 import nltk
 #nltk.download('punkt')
 #nltk.download('averaged_perceptron_tagger')
@@ -143,8 +144,9 @@ class Element(object):
 
         # Demographics if this is a string (noun, proper noun, verb, etc)
         self.TextDemographics:list = []
+        self.TextType:dict={}
         # Overall type, string, currency,
-        self.Type:str = []
+        self.Primitive:str ='String'
 
         self.Len: int = -1
 
@@ -165,6 +167,45 @@ class Element(object):
 
     def GetVector(self) -> list:
         return [self.RenderedX, self.RenderedY, self.TagDepth, self.TagIndex]
+
+    def ToDataFrame(self) -> pd.DataFrame:
+
+        newDF = pd.DataFrame()
+
+        newDF['TagName'] = [self.TagName]
+        newDF['TagID'] = [self.TagID]
+        newDF['RenderedX'] = [self.RenderedX]
+        newDF['RenderedY'] = [self.RenderedY]
+        newDF['RenderContainerWidth'] = [self.RenderContainerWidth]
+        newDF['RenderContainerHeight'] = [self.RenderContainerHeight]
+        newDF['MiddleRenderX'] = [self.MiddleRenderX]
+        newDF['MiddleRenderY'] = [self.MiddleRenderY]
+        newDF['InnerHTML'] = [self.InnerHTML]
+        newDF['TextDemographics'] = [self.TextDemographics]
+        newDF['Primitive'] = [self.Primitive]
+        newDF['TextType'] = [self.TextType]
+        newDF['Len'] = [self.Len]
+        newDF['TagDepth'] = [self.TagDepth]
+        newDF['TagIndex'] = [self.TagIndex]
+        newDF['ParentTags'] = [self.ParentTags]
+        newDF['ParentIDs'] = [self.ParentIDs]
+        newDF['AncestorTags'] = [self.AncestorTags]
+        newDF['AncestorTagIDs'] = [self.AncestorTagIDs]
+        newDF['ElementTags'] = [self.ElementTags]
+
+        return newDF
+
+
+def ConvertListOfElementsToDF(elements:List[Element]) -> pd.DataFrame:
+    """Simply take a list of Element objects and put out as a Dataframe"""
+
+    bigDF = pd.DataFrame()
+
+    for element in elements:
+        bigDF = bigDF.append(element.ToDataFrame())
+
+    return bigDF
+
 
 
 def Contained(elem1:Element, elem2:Element) -> bool:
@@ -409,7 +450,7 @@ def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters
     return finalElements
 
 
-def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[List[re.Pattern]]) -> List[Element]:
+def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[Tuple]) -> List[Element]:
     """Given a single element, parse it out, across all formats"""
 
     # In order of most complex to least complex, take pieces out of the element's string
@@ -417,9 +458,14 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
 
     tempTexts = []
 
-    for formatType in listOfDataFormats:
-        for formatSpecific in formatType:
+    for formatTypeTuple in listOfDataFormats:
+        formatType = formatTypeTuple[0]
+        formatTypeFormats = formatTypeTuple[1]
+
+        for formatSpecific in formatTypeFormats:
             foundEntries = formatSpecific.findall(currentText)
+
+            fullBreak = False
 
             for found in foundEntries:
                 # Don't add a new element if the whole element matches
@@ -428,14 +474,28 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
                     foundIndex = element.InnerHTML.index(found)
 
                     # Where was this format found in the overall original string? this will determine "order" before return
-                    tempTexts.append((found,foundIndex))
+                    tempTexts.append((found,foundIndex,formatType))
 
                     # Remove from original string
                     currentText = currentText.replace(found,'')
+                else:
+                    # Don't further break down an equally matched "found" thing
+                    fullBreak = True
+                    break
+
+            if fullBreak:
+                # skip a "fully qualified entry, but still set the data type if matched
+                element.Primitive = formatType
+                break
 
     # If there is remaining text at the end, that didn't match any formats, clean it up
-    remainingTextFoundIndex = element.InnerHTML.index(currentText)
-    tempTexts.append((currentText,remainingTextFoundIndex))
+    try:
+        remainingTextFoundIndex = element.InnerHTML.index(currentText)
+    except:
+        # if string not found, assume the middle of the overall original
+        remainingTextFoundIndex = len(element.InnerHTML)/2
+
+    tempTexts.append((currentText,remainingTextFoundIndex,element.Primitive))
 
     # Sort by the index order
     tempTexts.sort(key=lambda x:x[1], reverse=False)
@@ -446,12 +506,14 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
     for idx, textObj in enumerate(tempTexts):
         text = textObj[0]
         occurrenceIndex = textObj[1]
+        dataType = textObj[2]
 
         newElement = copy.copy(element)
 
         newElement.InnerHTML = text
         # Change the Ti based on occurrence in original string
         newElement.TagIndex += idx
+        newElement.Primitive = dataType
 
         # Change Render X based on the "distance in the text"
         newElement.RenderedX += (4*occurrenceIndex)
@@ -820,7 +882,7 @@ def ParseFromDataFrameToList(data:pd.DataFrame) -> List[Element]:
 
         newDataUnit = Element(None, None, None, None, None, None, None)
 
-        newDataUnit.__dict__ = row
+        newDataUnit.__dict__.update(row)
 
         tempList1 = row['ParentTags'].replace('\'', '"')
         tempList2 = row['ParentIDs'].replace('\'', '"')

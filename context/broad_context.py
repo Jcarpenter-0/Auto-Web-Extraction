@@ -39,7 +39,10 @@ MimeIgnores = {'pdf', 'zip', 'rar', 'exe', 'png', 'jpg', 'jpeg', 'docx', 'doc', 
 # Basic Primitive Data Format Regexes
 # ======================================================================================================================
 
-Currency = [re.compile("\$[0-9]+\.[0-9][0-9]")]
+# alternative primitives definition ("Name of Primitive/Type",[List of patterns], Parsing Method())
+
+Currency = [re.compile("\$[0-9]+\.[0-9][0-9]"),
+            re.compile("\$[0-9]+")]
 
 Address = [re.compile("[0-9]+ [A-Za-z]+ (Ave)?(St)? [A-Z][A-Z],? [A-Z][a-z]+,? [A-Z][A-Z] [0-9]+"),
            re.compile("[A-Z]{1,10}[a-z]{1,10}, [A-Z]{1,3}[a-z]{0,3}, [A-Z]{1,3}"),
