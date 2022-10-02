@@ -73,7 +73,7 @@ def MatchMappings(elements:List[context.formats.html.Element], mappings:List[tup
                     fieldScores.append((fieldScore, fieldName, fieldComponentName, fieldRules[4]))
                     mappingScore += fieldScore
 
-            ratings.append((mappingScore, fieldScores, element))
+            ratings.append((mappingScore, mappingName, element, fieldScores))
 
     return ratings
 
@@ -82,7 +82,10 @@ def MatchMappings(elements:List[context.formats.html.Element], mappings:List[tup
 # Common mappings and relationships, here one defines the rules that will take clustered data and map
 # ====================================================================================================
 
-EventMapping = ('Event', [])
+EventMapping = ('Event', [('Event-Date', [('Event-Date-Label', None, {'NNP':0.25}, 'String', True, None),
+                                          ('Event-Date-Data', None, None,'Date Range', False, None),])
+                          ,('Event-Important-Date', [('Event-Date-Label', None, {'NN':0.25}, 'String', True, None),
+                                          ('Event-Date-Data', None, None,'Date', False, None),])])
 
 #
 ProductMapping = ('Product', [('Product-Name', [('Product-Name-Label', None, {'NN':0.25}, 'String', True, None),
@@ -95,6 +98,7 @@ ProductMapping = ('Product', [('Product-Name', [('Product-Name-Label', None, {'N
 AllMappings = []
 
 AllMappings.append(ProductMapping)
+AllMappings.append(EventMapping)
 
 # =====================================================================================================
 # Specific Mapping Cases

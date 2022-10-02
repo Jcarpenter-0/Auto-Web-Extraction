@@ -6,9 +6,9 @@ from urllib.parse import urlparse
 # Check if the found links contained the links we "know" are right
 # ======================================================================================================================
 
-dataFiles = glob.glob('./test-*-*/ses-*-depth-*-links-*-time-*.csv')
+dataFiles = glob.glob('../exp-04-cs-conferences/*-*-depth-*-links-*-time-*.csv')
 
-answerLinksDF = pd.read_csv('./answer-links.csv')
+answerLinksDF = pd.read_csv('../exp-04-cs-conferences/answer-links.csv')
 totalNumberOfAnswers = len(answerLinksDF)
 answerCollection = answerLinksDF['Valid-Links'].apply(lambda x: x.split(','))
 
@@ -23,6 +23,9 @@ def AnswerCheck(row, answerField) -> bool:
 
 
 for dataFile in dataFiles:
+
+    approachName = dataFile.split('/')[-1]
+
     links = pd.read_csv(dataFile)
 
     totalNumberOfLinks = len(links)

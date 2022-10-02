@@ -90,8 +90,8 @@ def AnchorsToLinks(webElements:list, sourceText:str=None) -> Dict[str,str]:
             if linkText is not None and 'http' in linkText:
                 subLinks[linkText] = sourceText
 
-        except:
-            print('Web Element Link Extraction Failure, may not be a big deal.')
+        except Exception as ex:
+            print('Web Element - Anchor - Link Extraction Failure, {}'.format(ex))
 
     return subLinks
 

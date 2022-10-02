@@ -140,13 +140,15 @@ class Element(object):
 
         # Data (if any) that the tag encompassed
         self.InnerHTML:str = innerHTML
-        #self.RawInnerHTML:str = rawInnerHTML
 
-        # Demographics if this is a string (noun, proper noun, verb, etc)
-        self.TextDemographics:list = []
-        self.TextType:dict={}
         # Overall type, string, currency,
         self.Primitive:str ='String'
+        self.Entity:bool = False
+
+        # Custom Text Tagging Systems
+        self.NTLKTextDemographics = None
+        self.SpaceyTextDemographics = None
+        self.PyDictionaryDemographics = None
 
         self.Len: int = -1
 
@@ -166,6 +168,8 @@ class Element(object):
         self.ElementTags:list = elementTags
 
     def GetVector(self) -> list:
+        #, self.TagDepth, self.TagIndex
+
         return [self.RenderedX, self.RenderedY, self.TagDepth, self.TagIndex]
 
     def ToDataFrame(self) -> pd.DataFrame:
@@ -181,9 +185,11 @@ class Element(object):
         newDF['MiddleRenderX'] = [self.MiddleRenderX]
         newDF['MiddleRenderY'] = [self.MiddleRenderY]
         newDF['InnerHTML'] = [self.InnerHTML]
-        newDF['TextDemographics'] = [self.TextDemographics]
+        newDF['NTLKTextDemographics'] = [self.NTLKTextDemographics]
+        newDF['SpaceyTextDemographics'] = [self.SpaceyTextDemographics]
+        newDF['PyDictionaryDemographics'] = [self.PyDictionaryDemographics]
         newDF['Primitive'] = [self.Primitive]
-        newDF['TextType'] = [self.TextType]
+        newDF['IsEntity'] = [self.Entity]
         newDF['Len'] = [self.Len]
         newDF['TagDepth'] = [self.TagDepth]
         newDF['TagIndex'] = [self.TagIndex]
@@ -364,7 +370,7 @@ class HTMLStrip(html.parser.HTMLParser):
 # Process for taking HTML elements extracted from web pages and turning them into labeled, process-capable data
 # ======================================================================================================================
 
-def CleanupTagDumping(elements:List[Element], removeTags:List[str] = ['strike', 's']) -> List[Element]:
+def CleanupTagDumping(elements:List[Element], removeTags:List[str] = ['strike', 's', 'del']) -> List[Element]:
     """Simply go through all elements and remove the elements if the html tag is indicated in the parent tags"""
 
     newList = []
@@ -410,6 +416,9 @@ def CleanupElementSubsplittingSpecific(elements:List[Element], specialSplitter='
 
             elementSubPieces = element.InnerHTML.split(specialSplitter)
 
+            # reduce the parent's container size by amount we are taking out
+            element.RenderContainerHeight -= (element.RenderContainerHeight / len(elementSubPieces) * len(elementSubPieces) -1)
+
             for subPiece in elementSubPieces:
 
                 newElement = copy.copy(element)
@@ -428,6 +437,14 @@ def CleanupElementSubsplittingSpecific(elements:List[Element], specialSplitter='
 
                 element.InnerHTML = element.InnerHTML.replace(subPiece, '')
 
+                # for each new line, reduce the overall container's size by 1/3
+                newElement.RenderContainerHeight = element.RenderContainerHeight/len(elementSubPieces)
+
+                # Recalculate Middles
+                newElement.MiddleRenderX = newElement.RenderedX + newElement.RenderContainerWidth / 2
+                newElement.MiddleRenderY = newElement.RenderedY + newElement.RenderContainerHeight / 2
+
+
         else:
             newElementsList.append(element)
 
@@ -439,7 +456,7 @@ def CleanupElementSubsplittingSpecific(elements:List[Element], specialSplitter='
     return newElementsList
 
 
-def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters=['\n', '<br>','//', '—']) -> List[Element]:
+def CleanupElementSubsplittingSpecifics(elements:List[Element], specialSplitters=['\n', '<br>','//']) -> List[Element]:
 
     finalElements = elements
 
@@ -471,7 +488,12 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
                 # Don't add a new element if the whole element matches
                 if len(found) != len(currentText):
 
-                    foundIndex = element.InnerHTML.index(found)
+                    try:
+                        foundIndex = element.InnerHTML.index(found)
+                    except:
+                        customFound = found.strip()
+
+                        foundIndex = element.InnerHTML.index(customFound)
 
                     # Where was this format found in the overall original string? this will determine "order" before return
                     tempTexts.append((found,foundIndex,formatType))
@@ -487,6 +509,10 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
                 # skip a "fully qualified entry, but still set the data type if matched
                 element.Primitive = formatType
                 break
+
+        if fullBreak:
+            # This element is done
+            break
 
     # If there is remaining text at the end, that didn't match any formats, clean it up
     try:
@@ -517,6 +543,10 @@ def Cleanup_GeneralMatchSplittingSingle(element:Element, listOfDataFormats:List[
 
         # Change Render X based on the "distance in the text"
         newElement.RenderedX += (4*occurrenceIndex)
+
+        # Recalculate Middles
+        newElement.MiddleRenderX = newElement.RenderedX + newElement.RenderContainerWidth / 2
+        newElement.MiddleRenderY = newElement.RenderedY + newElement.RenderContainerHeight / 2
 
         newElements.append(newElement)
 
@@ -575,6 +605,12 @@ def Cleanup_GeneralMatchSplitting(elements:List[Element], dataFormats:List[re.Pa
             for element in moddedElements[idx:]:
                 element.TagIndex = element.TagIndex + ongoingTagIndex
 
+                # Recalculate Middles
+                element.MiddleRenderX = element.RenderedX + element.RenderContainerWidth / 2
+                element.MiddleRenderY = element.RenderedY + element.RenderContainerHeight / 2
+
+
+
     newElementsList.extend(moddedElements)
 
     return newElementsList
@@ -621,6 +657,10 @@ def Cleanup_MatchSplitting(elements:List[Element], soughtItems:List[context.Form
             # update the subsequent elements tagIndexes
             for element in elements[idx:]:
                 element.TagIndex = element.TagIndex + ongoingTagIndex
+
+                # Recalculate Middles
+                element.MiddleRenderX = element.RenderedX + element.RenderContainerWidth / 2
+                element.MiddleRenderY = element.RenderedY + element.RenderContainerHeight / 2
 
     newElementsList.extend(elements)
 
