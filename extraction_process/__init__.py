@@ -1095,3 +1095,11 @@ def GrabBest(webData:List[context.formats.html.Element], adaptiveClusterDistance
     miscInfo['adaptiveClusterDistance'] = [adaptiveClusterDistance]
 
     return (returnDF, timeDelta.microseconds, miscInfo)
+
+
+def GoogleResolver(browser:WebDriver, query:str, maxDepth:int=1, pageLoadTime:int=10) -> (pd.DataFrame, float, pd.DataFrame):
+    """Give google a single page intended query, like www2023 abstract deadline. And see if it can get the answer right"""
+
+    return (None, 0.0, None)
+
+
