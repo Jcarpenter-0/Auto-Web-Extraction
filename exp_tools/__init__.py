@@ -14,62 +14,33 @@ def CheckScrapeAnswers2(data:pd.DataFrame, answerKey:pd.DataFrame) -> dict:
     """Given a csv (dataframe) of labeled field answers, will match against what was found on a few criteria:
     """
 
+    # Load in the answer keys, and unpack them for a "per-data item" cross-off approach
+    answerKeyUnpacked = []
+    for rowIdx, answerRow in answerKey.iterrows():
+        # only need to check against the data item and the label
+        dataItems = answerRow['field-value'].split('|')
+        for dataItem in dataItems:
+            if 'label-type' == 'Label-Less':
+                answerKeyUnpacked.append((dataItem, answerRow['parse-primitive']))
+            else:
+                answerKeyUnpacked.append((dataItem, answerRow['label-html-text']))
+
+    totalAnswerDataFields = len(answerKeyUnpacked)
+
+    matches = 0
+
+    # Go through each data item found by the system, and if a full match, delete from the answerKey
+    for rowIdx, dataRow in data.iterrows():
+        for answerIdx, answerField in enumerate(answerKeyUnpacked):
+            if answerField[0] in dataRow['Value'] and answerField[1] in dataRow['Label']:
+                matches += 1
+                del answerKeyUnpacked[answerIdx]
+                break
+
+    # Noise, Match-Accuracy
     statsDict = dict()
-
-    # Label accuracy,
-    dataLabels = list(data['Label'])
-    keyLabels = list(answerKey['Label'])
-
-    foundLabels = 0
-
-    for labelIndex, keyLabel in enumerate(keyLabels):
-
-        for dataLabelIndex, dataLabel in enumerate(dataLabels):
-
-            # If the data item is found, remove from list, break loop
-            if keyLabel in dataLabel:
-                foundLabels += 1
-                dataLabels.pop(dataLabelIndex)
-
-    #statsDict['Label-Accuracy'] = foundLabels/len(keyLabels)
-
-    # Data accuracy,
-    foundData = 0
-    matchedData = 0
-
-    remainingData = data.copy()
-    del remainingData['clusterID']
-    remainingData = remainingData.reset_index(drop=True)
-
-    for rowIDX, keyDataElement in answerKey.iterrows():
-
-        matched = False
-
-        for row2IDX, dataElement in remainingData.iterrows():
-
-            # If the data item is found, remove from list, break loop
-            if keyDataElement['Value'] == dataElement['Value']:
-                foundData += 1
-
-                # Also check if the label is matched correctly
-                if keyDataElement['Label'] in dataElement['Label']:
-                    matchedData += 1
-                    matched = True
-                    remainingData = remainingData.drop(row2IDX)
-                    break
-
-                #break
-
-        if matched is False:
-            pass
-            #print('Could not Match {}'.format(keyDataElement))
-
-    #statsDict['Data-Accuracy'] = foundData/len(answerKey)
-
-    statsDict['Match-Accuracy'] = matchedData/len(answerKey)
-
-    # Noise, match accuracy/len(data)
-    statsDict['Data-To-Noise'] = matchedData/len(data)
+    statsDict['Match-Accuracy'] = matches/totalAnswerDataFields
+    statsDict['Data-To-Noise'] = matches/len(data)
 
     return statsDict
 

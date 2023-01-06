@@ -819,6 +819,10 @@ def GrabBest(webData:List[context.formats.html.Element], adaptiveClusterDistance
                 # If the innerHTML ends with : it like is something like this (Name: John Doe)
                 entityCounts -= 1
 
+            if element.InnerHTML.endswith('.'):
+                # is a "sentence" and likely "data"
+                entityCounts += 1
+
             # check capitalization
             textTokens = element.InnerHTML.split(' ')
 
@@ -873,7 +877,6 @@ def GrabBest(webData:List[context.formats.html.Element], adaptiveClusterDistance
     currentClusterDistanceRatio = None
     currentClusterdistanceAvg = None
     currentClusterdistanceSTD = None
-
 
     continueNewClustering = True
     clusters = []
@@ -1037,7 +1040,7 @@ def GrabBest(webData:List[context.formats.html.Element], adaptiveClusterDistance
                 # If no element found, then we assume label-less and the label as primitive
                 if closestElement is None:
                     if dataElement.Primitive == 'String':
-                        elementDF['Label'] = ['Proper Noun']
+                        elementDF['Label'] = ['Name']
                     else:
                         elementDF['Label'] = [dataElement.Primitive]
                 else:
@@ -1097,9 +1100,36 @@ def GrabBest(webData:List[context.formats.html.Element], adaptiveClusterDistance
     return (returnDF, timeDelta.microseconds, miscInfo)
 
 
-def GoogleResolver(browser:WebDriver, query:str, maxDepth:int=1, pageLoadTime:int=10) -> (pd.DataFrame, float, pd.DataFrame):
+def GoogleResolver(browser:WebDriver, query:str) -> (pd.DataFrame, float, pd.DataFrame):
     """Give google a single page intended query, like www2023 abstract deadline. And see if it can get the answer right"""
 
-    return (None, 0.0, None)
+    # The feature snippet code xpdopen = class or V3FYCf
+
+    # The table answer code ULSxyf a2qDab EyBRub = class
+
+    timeStart = datetime.datetime.now()
+
+    # Apply query
+    browser.get('https://www.google.com/search?q={}'.format(query))
+
+    # Check for the tabular array of answer variant
+    tabulars = browser.find_elements_by_class_name('ULSxyf a2qDab EyBRub')
+    # Check for the snippet variant
+    snippets = browser.find_elements_by_class_name('V3FYCf')
+
+    # Process the results into something useful
+    if len(snippets) > 0:
+        snippet = snippets[0]
+
+        snippetPieces = snippet.text.split('\n')
+
+        # what do the pieces look like here?
+        # Snippet requires parsing similar to web page extraction
+
+    timeEnd = datetime.datetime.now()
+    timeDelta = timeEnd - timeStart
+
+    # the labeled fields, time taken, and finally, debug full info
+    return (None, timeDelta, None)
 
 
